@@ -4,8 +4,8 @@
 # Ghidra Batch Pipeline Setup Script
 # 
 # This script sets up a minimal environment for running Ghidra batch analysis:
-# - Downloads Ghidra from Google Drive
-# - Extracts and configures Ghidra
+# - Installs Ghidra from official GitHub releases
+# - Downloads binary files from Google Drive to builds_new
 # - Sets up minimal Python environment 
 # - Runs the batch pipeline
 #
@@ -22,6 +22,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
+GHIDRA_VERSION="11.0.1"
 GHIDRA_INSTALL_DIR="/opt/ghidra"
 GOOGLE_DRIVE_FOLDER="https://drive.google.com/drive/u/0/folders/1M0fiQeg5Tv8hAWGKDLpZVRB5GzvCJNGT"
 
@@ -118,11 +119,11 @@ install_minimal_packages() {
 }
 
 ################################################################################
-# Google Drive Download Function
+# Binary Files Download Function
 ################################################################################
 
-download_from_google_drive() {
-    print_header "Downloading Ghidra from Google Drive"
+download_binary_files_from_google_drive() {
+    print_header "Downloading Binary Files from Google Drive"
     
     print_info "Google Drive folder: $GOOGLE_DRIVE_FOLDER"
     print_warning "This script cannot automatically download from Google Drive folders due to authentication requirements."
@@ -131,35 +132,60 @@ download_from_google_drive() {
     echo "1. Open the Google Drive folder in your browser:"
     echo "   $GOOGLE_DRIVE_FOLDER"
     echo ""
-    echo "2. Look for a Ghidra zip file (e.g., ghidra_*.zip)"
+    echo "2. Look for binary files archive (e.g., *.zip, *.tar.gz containing .o, .a, .elf files)"
     echo ""
-    echo "3. Download it to this directory ($(pwd))"
+    echo "3. Download the binary archive to this directory ($(pwd))"
     echo ""
     
     # Wait for user to download the file
     while true; do
-        read -p "Have you downloaded the Ghidra zip file to this directory? (y/n): " -n 1 -r
+        read -p "Have you downloaded the binary files archive to this directory? (y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             break
         elif [[ $REPLY =~ ^[Nn]$ ]]; then
-            print_info "Please download the Ghidra zip file first, then run this script again."
+            print_info "Please download the binary files archive first, then run this script again."
             exit 0
         fi
     done
     
-    # Find the downloaded zip file
-    GHIDRA_ZIP=$(find . -maxdepth 1 -name "*.zip" -name "*ghidra*" | head -n 1)
-    if [ -z "$GHIDRA_ZIP" ]; then
-        GHIDRA_ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
-    fi
+    # Find the downloaded archive file
+    BINARY_ARCHIVE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.tar" \) | head -n 1)
     
-    if [ -z "$GHIDRA_ZIP" ]; then
-        print_error "No zip file found in current directory. Please download the Ghidra zip file."
+    if [ -z "$BINARY_ARCHIVE" ]; then
+        print_error "No archive file found in current directory. Please download the binary files archive."
         exit 1
     fi
     
-    print_success "Found zip file: $GHIDRA_ZIP"
+    print_success "Found archive file: $BINARY_ARCHIVE"
+
+    # Create builds_new directory if it doesn't exist
+    mkdir -p builds_new
+
+    # Extract the archive into builds_new based on file type
+    print_info "Extracting binary files to builds_new..."
+    case "$BINARY_ARCHIVE" in
+        *.zip)
+            unzip -q "$BINARY_ARCHIVE" -d builds_new
+            ;;
+        *.tar.gz)
+            tar -xzf "$BINARY_ARCHIVE" -C builds_new
+            ;;
+        *.tar)
+            tar -xf "$BINARY_ARCHIVE" -C builds_new
+            ;;
+        *)
+            print_error "Unsupported archive format: $BINARY_ARCHIVE"
+            exit 1
+            ;;
+    esac
+
+    print_success "Binary files extracted successfully to builds_new"
+    
+    # Count extracted files
+    BINARY_COUNT=$(find builds_new -type f \( -name "*.o" -o -name "*.a" -o -name "*.elf" \) | wc -l)
+    print_info "Found $BINARY_COUNT binary files for analysis"
+    
     return 0
 }
 
@@ -170,7 +196,21 @@ download_from_google_drive() {
 install_ghidra() {
     print_header "Installing Ghidra"
     
-    download_from_google_drive
+    # Check if Java is installed
+    if ! command -v java &> /dev/null; then
+        print_info "Installing Java (required for Ghidra)..."
+        case $OS in
+            fedora|rhel|centos)
+                sudo dnf install -y java-17-openjdk java-17-openjdk-devel
+                ;;
+            ubuntu|debian)
+                sudo apt-get install -y openjdk-17-jdk openjdk-17-jre
+                ;;
+        esac
+    fi
+    
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1)
+    print_info "Java version: $JAVA_VERSION"
     
     # Check if Ghidra is already installed
     if [ -d "$GHIDRA_INSTALL_DIR" ]; then
@@ -184,16 +224,30 @@ install_ghidra() {
         sudo rm -rf $GHIDRA_INSTALL_DIR
     fi
     
-    print_info "Extracting Ghidra..."
+    print_info "Downloading Ghidra $GHIDRA_VERSION from GitHub..."
+    GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_20240130.zip"
+    
+    # Create temporary directory for download and extraction
     TEMP_DIR=$(mktemp -d)
     cd $TEMP_DIR
     
-    unzip -q "$OLDPWD/$GHIDRA_ZIP"
+    if ! wget -q --show-progress "$GHIDRA_URL"; then
+        print_error "Failed to download Ghidra from GitHub"
+        print_info "Please download manually from: https://github.com/NationalSecurityAgency/ghidra/releases"
+        cd "$OLDPWD"
+        rm -rf $TEMP_DIR
+        exit 1
+    fi
+    
+    print_info "Extracting Ghidra..."
+    unzip -q ghidra_*.zip
     
     # Find the extracted Ghidra directory
     GHIDRA_DIR=$(find . -maxdepth 1 -type d -name "*ghidra*" | head -n 1)
     if [ -z "$GHIDRA_DIR" ]; then
         print_error "Could not find Ghidra directory in extracted zip"
+        cd "$OLDPWD"
+        rm -rf $TEMP_DIR
         exit 1
     fi
     
@@ -369,6 +423,7 @@ main() {
     # Setup steps
     install_minimal_packages
     install_ghidra
+    download_binary_files_from_google_drive
     setup_python_environment
     create_env_file
     setup_directories

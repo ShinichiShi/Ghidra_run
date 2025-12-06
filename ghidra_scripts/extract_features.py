@@ -812,6 +812,21 @@ def extract_function_data(func, current_program):
     
     # 5. New Comprehensive Features
     crypto_sigs = detect_crypto_signatures(func, all_immediates)
+
+    # --- Labeling Logic ---
+    label = "Unknown"
+    # 1. Check Name Mapping
+    if func_name in LABEL_MAP:
+        label = LABEL_MAP[func_name]
+    # 2. Check Signatures
+    elif crypto_sigs["has_aes_sbox"] or crypto_sigs["has_aes_rcon"]:
+        label = "AES"
+    elif crypto_sigs["has_sha_constants"]:
+        label = "SHA"
+    elif crypto_sigs["rsa_bigint_detected"]:
+        label = "RSA"
+    
+    func_data["label"] = label
     
     total_inst = sum(n["instruction_count"] for n in func_data["node_level"])
     entropy_metrics = calculate_function_entropy_metrics(func, all_opcode_mnemonics, func_data["graph_level"]["cyclomatic_complexity"], total_inst, current_program)

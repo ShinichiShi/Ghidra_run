@@ -5,6 +5,7 @@ This repository contains a pipeline for extracting advanced features from firmwa
 ## Features
 
 -   **Batch Processing**: Efficiently handles large numbers of binaries.
+-   **Parallel Execution**: Uses multi-threading to process multiple binaries concurrently.
 -   **Automated Ghidra Analysis**: Uses Ghidra's headless analyzer to extract features.
 -   **Rich Feature Set**:
     -   **Control Flow Graph (CFG)**: Basic blocks, edges, loop depth, dominance.
@@ -55,8 +56,16 @@ Follow the on-screen instructions. You may be prompted to download a binary arch
 The script will:
 -   Auto-detect your Ghidra installation.
 -   Scan `builds_new/` for binaries.
--   Process them in batches.
+-   Process them in batches using parallel threads (default: 4 threads).
 -   Output progress and summary statistics.
+
+### Configuration
+
+You can adjust the number of parallel threads by modifying the `MAX_WORKERS` variable in `run_batch_pipeline.py`:
+
+```python
+MAX_WORKERS = 4  # Number of parallel threads
+```
 
 ## Output
 
